@@ -1,3 +1,4 @@
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -93,3 +94,50 @@ def test_runtime_rejects_a_wrong_worker_source_hash(tmp_path, monkeypatch):
     monkeypatch.setenv("FAILUREPROBE_EXPECTED_RUNTIME", str(expected))
     with pytest.raises(RuntimeError, match="wrong trace_helper source"):
         runtime_sources()
+
+
+def test_reset_records_native_source_count_and_hash_separately_from_settled_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAILUREPROBE_ORACLE_DIR", str(tmp_path))
+
+    class ResetEnvironment(FakeEnvironment):
+        robots = [SimpleNamespace(controller=SimpleNamespace(use_delta=True))]
+
+        def seed(self, seed):
+            pass
+
+        def set_perturbation_seed(self, seed):
+            pass
+
+        def reset(self):
+            return _observation()
+
+        def set_init_state(self, state):
+            return _observation()
+
+        def begin_perturbation_rollout(self):
+            return _observation()
+
+        def get_perturbation_plan(self):
+            return {}
+
+    source = tmp_path / "actual.pruned_init"
+    source.write_bytes(b"source file bytes differ from the selected numerical state")
+    states = np.arange(12, dtype=np.float64).reshape(3, 4)
+    adapter = LiberoEnvironmentAdapter()
+    adapter._env = ResetEnvironment()
+    adapter._init_states = states
+    adapter._initial_state_source = {
+        "path": str(source),
+        "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    }
+    adapter._camera_names = ["agentview", "robot0_eye_in_hand"]
+    adapter._failureprobe_trace = OracleTrace({"_failureprobe_session_id": "ses_native_reset"})
+    adapter.reset(2, 42)
+    event = json.loads(adapter._failureprobe_trace.path.read_text())
+    assert event["source_initial_state_count"] == 3
+    assert event["source_initial_state_source"] == adapter._initial_state_source
+    assert event["source_initial_state_sha256"] == hashlib.sha256(states[2].tobytes()).hexdigest()
+    assert event["source_initial_state_dtype"] == "<f8"
+    assert event["source_initial_state_shape"] == [4]
+    assert event["source_initial_state_sha256"] != event["source_initial_state_source"]["sha256"]
+    assert event["sim_state"] == [1.0, 2.0]

@@ -29,6 +29,7 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         self._suite: Any = None
         self._task: Any = None
         self._init_states: Any = None
+        self._initial_state_source: Optional[Dict[str, str]] = None
         self._camera_names: List[str] = []
         self._max_steps = 0
         self._step_index = 0
@@ -56,7 +57,9 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         if task_id >= self._suite.get_num_tasks():
             raise ValueError("task_id is outside the selected suite")
         self._task = self._suite.get_task(task_id)
-        self._init_states = self._suite.get_task_init_states(task_id)
+        self._init_states, self._initial_state_source = _native_initial_states(
+            self._suite, task_id
+        )
         self._camera_names = list(spec["camera_names"])
         self._max_steps = int(spec["max_steps"])
         self._control_mode = str(spec.get("control_mode", "relative"))
@@ -135,6 +138,8 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
                 source_initial_state_sha256=hashlib.sha256(source_state.tobytes()).hexdigest(),
                 source_initial_state_dtype=source_state.dtype.str,
                 source_initial_state_shape=list(source_state.shape),
+                source_initial_state_count=len(self._init_states),
+                source_initial_state_source=self._initial_state_source,
                 **oracle_state(self._env, raw),
             )
         return {
@@ -197,6 +202,30 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
             root = os.path.abspath(root)
             if root not in sys.path:
                 sys.path.insert(0, root)
+
+
+def _native_initial_states(suite: Any, task_id: int) -> Tuple[Any, Dict[str, str]]:
+    import torch
+
+    original_load = torch.load
+    sources = []
+
+    def observed_load(source: Any, *args: Any, **kwargs: Any) -> Any:
+        sources.append(Path(source).resolve())
+        return original_load(source, *args, **kwargs)
+
+    torch.load = observed_load
+    try:
+        states = suite.get_task_init_states(task_id)
+    finally:
+        torch.load = original_load
+    if len(sources) != 1:
+        raise RuntimeError("Native initial-state loader must read exactly one source file")
+    path = sources[0]
+    return states, {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
 
 
 def _scalar_info(info: Any) -> Dict[str, Any]:
