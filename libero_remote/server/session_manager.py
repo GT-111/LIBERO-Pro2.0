@@ -120,6 +120,7 @@ class SessionManager:
 
             session_id = f"ses_{uuid.uuid4().hex}"
             episode_id = f"ep_{uuid.uuid4().hex}"
+            worker_spec["_failureprobe_session_id"] = session_id
             worker = EnvWorker.start(self._backend, self._worker_timeout_seconds)
             record = SessionRecord(
                 session_id=session_id,

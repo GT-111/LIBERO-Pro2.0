@@ -888,6 +888,8 @@ class BDDLBaseDomain(SingleArmEnv):
         return self._step_with_optional_gripper_force(action, force_command)
 
     def _step_with_optional_gripper_force(self, action, force_command):
+        requested_action = np.asarray(action).copy()
+        requested_force_command = None if force_command is None else np.asarray(force_command).copy()
         self.perturbation_runtime.before_simulation_step(
             self, self._perturbation_step
         )
@@ -913,6 +915,13 @@ class BDDLBaseDomain(SingleArmEnv):
             obs, self._perturbation_step
         )
         info = dict(info)
+        info["failureprobe_commands"] = {
+            "requested_action": requested_action,
+            "transformed_action": np.asarray(action).copy(),
+            "requested_force_command": requested_force_command,
+            "transformed_force_command": force_command,
+            "perturbation_step": self._perturbation_step,
+        }
         info["perturbation"] = self.perturbation_runtime.diagnostics()
         info["language_instruction"] = self.language_instruction
         self._perturbation_step += 1

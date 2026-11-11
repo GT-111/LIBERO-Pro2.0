@@ -1,5 +1,6 @@
 """Adapter for the real LIBERO-PRO OffScreenRenderEnv."""
 
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ from libero_remote.reproducibility import (
 )
 
 from .base import EnvironmentAdapter
+from .failureprobe_trace import OracleTrace
 from .observations import describe_observation, normalize_standard_observation
 from .task_manifest import TaskManifest
 
@@ -31,8 +33,12 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         self._max_steps = 0
         self._step_index = 0
         self._control_mode = "relative"
+        self._failureprobe_trace: Optional[OracleTrace] = None
 
     def create(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        self._failureprobe_trace = (
+            OracleTrace(spec) if os.environ.get("FAILUREPROBE_ORACLE_DIR") else None
+        )
         self._configure_import_path()
         from libero.libero import benchmark
         from libero.libero.envs import OffScreenRenderEnv
@@ -119,13 +125,22 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         _set_controller_mode(self._env, self._control_mode)
         self._step_index = 0
         plan = _perturbation_plan(self._env)
+        if self._failureprobe_trace is not None:
+            source_state = np.ascontiguousarray(self._init_states[init_state_id])
+            self._failureprobe_trace.reset(
+                init_state_id,
+                seed,
+                self._env,
+                perturbation_plan=plan,
+                source_initial_state_sha256=hashlib.sha256(source_state.tobytes()).hexdigest(),
+                source_initial_state_dtype=source_state.dtype.str,
+                source_initial_state_shape=list(source_state.shape),
+            )
         return {
             "observation": normalize_standard_observation(raw, self._camera_names),
             "worker_step_index": 0,
             "environment_reproducibility": {
-                "initial_state_fingerprint": numerical_state_fingerprint(
-                    self._env.get_sim_state()
-                ),
+                "initial_state_fingerprint": numerical_state_fingerprint(self._env.get_sim_state()),
                 "perturbation_plan_fingerprint": canonical_fingerprint(plan),
                 "perturbation_plan": plan,
             },
@@ -137,7 +152,23 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         success = bool(self._env.check_success())
         terminated = bool(done or success)
         truncated = self._step_index >= self._max_steps and not terminated
+        # Keep nested diagnostics and both commands before the public scalar filter.
+        if self._failureprobe_trace is not None:
+            self._failureprobe_trace.record(
+                "step",
+                step=self._step_index - 1,
+                env_step=self._step_index,
+                sim_time=self._step_index / 20.0,
+                requested_action=action,
+                info=info,
+                success=success,
+                terminated=terminated,
+                truncated=truncated,
+                sim_state=self._env.get_sim_state(),
+            )
         scalar_info = _scalar_info(info)
+        if self._failureprobe_trace is not None and self._failureprobe_trace.path is not None:
+            scalar_info["failureprobe_oracle_trace"] = str(self._failureprobe_trace.path)
         scalar_info["language_instruction"] = str(self._env.language_instruction)
         return {
             "observation": normalize_standard_observation(raw, self._camera_names),
@@ -274,11 +305,7 @@ def _resolve_task_bddl_file(
     if manifest_path:
         if suite_name is None:
             raise ValueError("suite_name is required when using the task manifest")
-        return str(
-            TaskManifest.load(manifest_path).resolve_bddl(
-                suite_name, task_id, variant
-            )
-        )
+        return str(TaskManifest.load(manifest_path).resolve_bddl(suite_name, task_id, variant))
 
     configured_root = os.environ.get("LIBERO_REMOTE_BDDL_ROOT")
     if not configured_root:
