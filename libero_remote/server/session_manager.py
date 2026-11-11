@@ -541,8 +541,14 @@ class SessionManager:
             if record.status == SessionStatus.CLOSED:
                 return
             previous_status = record.status
-            await _run_blocking(record.worker.close)
-            record.status = SessionStatus.CLOSED
+            try:
+                await _run_blocking(record.worker.close)
+            except Exception:
+                record.worker.terminate()
+                raise
+            finally:
+                record.status = SessionStatus.CLOSED
+                record.release_payloads()
             emit_audit(
                 "session_closed",
                 session_id=record.session_id,
@@ -583,7 +589,9 @@ class SessionManager:
                 except Exception:
                     close_succeeded = False
                     record.worker.terminate()
-                record.status = SessionStatus.EXPIRED
+                finally:
+                    record.status = SessionStatus.EXPIRED
+                    record.release_payloads()
                 emit_audit(
                     "session_expired",
                     session_id=record.session_id,
@@ -784,8 +792,11 @@ class SessionManager:
         operation: str,
         request_id: Optional[str] = None,
     ) -> PlatformError:
-        record.worker.terminate()
-        record.status = SessionStatus.FAILED
+        try:
+            record.worker.terminate()
+        finally:
+            record.status = SessionStatus.FAILED
+            record.release_payloads(keep_cached_errors=True)
         code = (
             ErrorCode.WORKER_TIMEOUT
             if isinstance(error, WorkerTimeoutError)

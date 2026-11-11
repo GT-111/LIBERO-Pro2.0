@@ -49,6 +49,8 @@ def runtime_sources() -> Dict[str, Any]:
     paths = {
         "service_adapter": Path(__file__).with_name("libero.py"),
         "trace_helper": Path(__file__),
+        "session_manager": Path(__file__).parents[1] / "server" / "session_manager.py",
+        "session_record": Path(__file__).parents[1] / "server" / "session.py",
     }
     for key, module_name in (
         ("bddl", "libero.libero.envs.bddl_base_domain"),

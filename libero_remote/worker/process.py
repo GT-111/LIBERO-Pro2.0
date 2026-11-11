@@ -32,6 +32,7 @@ class EnvWorker:
         timeout_seconds: float,
     ) -> None:
         self._process = process
+        self._pid = process.pid
         self._connection = connection
         self._timeout_seconds = timeout_seconds
         self._closed = False
@@ -52,11 +53,11 @@ class EnvWorker:
 
     @property
     def is_alive(self) -> bool:
-        return self._process.is_alive()
+        return not self._closed and self._process.is_alive()
 
     @property
     def pid(self) -> Optional[int]:
-        return self._process.pid
+        return self._pid
 
     def create(self, spec: Dict[str, Any]) -> Dict[str, Any]:
         return self._call("create", spec=spec)
@@ -87,18 +88,25 @@ class EnvWorker:
         if self._process.is_alive():
             self._process.kill()
             self._process.join(timeout=2.0)
+        if not self._process.is_alive():
+            self._process.close()
 
     def terminate(self) -> None:
         if self._closed:
             return
         self._closed = True
-        self._connection.close()
+        try:
+            self._connection.close()
+        except (OSError, ValueError):
+            pass
         if self._process.is_alive():
             self._process.terminate()
             self._process.join(timeout=2.0)
         if self._process.is_alive():
             self._process.kill()
             self._process.join(timeout=2.0)
+        if not self._process.is_alive():
+            self._process.close()
 
     def _call(self, command: str, **payload: Any) -> Dict[str, Any]:
         if self._closed and command != "close":

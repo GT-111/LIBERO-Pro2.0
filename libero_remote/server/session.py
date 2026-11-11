@@ -77,6 +77,21 @@ class SessionRecord:
         default_factory=lambda: hashlib.sha256(b"libero-action-chain-v1").hexdigest()
     )
 
+    def release_payloads(self, keep_cached_errors: bool = False) -> None:
+        """Keep queryable outcome metadata without retaining episode RGB arrays."""
+        errors = [
+            (request_id, entry)
+            for request_id, entry in self.cache.items()
+            if keep_cached_errors and entry.error is not None
+        ]
+        self.cache.clear()
+        self.cache.update(errors)
+        if self.last_committed is not None:
+            self.last_committed = {
+                key: self.last_committed[key]
+                for key in ("request_id", "reward", "success", "terminated", "truncated")
+            }
+
     def snapshot(self) -> Dict[str, Any]:
         return {
             "session_id": self.session_id,
