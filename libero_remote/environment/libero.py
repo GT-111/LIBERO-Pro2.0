@@ -14,7 +14,7 @@ from libero_remote.reproducibility import (
 )
 
 from .base import EnvironmentAdapter
-from .failureprobe_trace import OracleTrace
+from .failureprobe_trace import OracleTrace, oracle_state
 from .observations import describe_observation, normalize_standard_observation
 from .task_manifest import TaskManifest
 
@@ -135,6 +135,7 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
                 source_initial_state_sha256=hashlib.sha256(source_state.tobytes()).hexdigest(),
                 source_initial_state_dtype=source_state.dtype.str,
                 source_initial_state_shape=list(source_state.shape),
+                **oracle_state(self._env, raw),
             )
         return {
             "observation": normalize_standard_observation(raw, self._camera_names),
@@ -165,6 +166,7 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
                 terminated=terminated,
                 truncated=truncated,
                 sim_state=self._env.get_sim_state(),
+                **oracle_state(self._env, raw),
             )
         scalar_info = _scalar_info(info)
         if self._failureprobe_trace is not None and self._failureprobe_trace.path is not None:

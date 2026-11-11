@@ -18,6 +18,33 @@ def _json_value(value: Any) -> Any:
     raise TypeError(f"Unsupported oracle value: {type(value).__name__}")
 
 
+def oracle_state(environment: Any, observation: Dict[str, Any]) -> Dict[str, Any]:
+    sim = environment.sim
+    contacts = []
+    for index in range(int(sim.data.ncon)):
+        contact = sim.data.contact[index]
+        contacts.append(
+            {
+                "geom1": int(contact.geom1),
+                "geom2": int(contact.geom2),
+                "dist": float(contact.dist),
+                "pos": np.asarray(contact.pos).copy(),
+                "frame": np.asarray(contact.frame).copy(),
+            }
+        )
+    return {
+        "object_state": {
+            key: value.copy()
+            for key, value in observation.items()
+            if isinstance(value, np.ndarray)
+            and value.dtype.kind in "biufc"
+            and not key.startswith("robot")
+            and not key.endswith("_image")
+        },
+        "contacts": contacts,
+    }
+
+
 def runtime_sources() -> Dict[str, Any]:
     paths = {
         "service_adapter": Path(__file__).with_name("libero.py"),

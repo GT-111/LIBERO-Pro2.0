@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -21,6 +22,16 @@ def _observation():
 
 class FakeEnvironment:
     language_instruction = "pick up the object"
+    sim = SimpleNamespace(
+        data=SimpleNamespace(
+            ncon=1,
+            contact=[
+                SimpleNamespace(
+                    geom1=1, geom2=2, dist=-0.001, pos=np.zeros(3), frame=np.eye(3).flatten()
+                )
+            ],
+        )
+    )
 
     def get_sim_state(self):
         return np.array([1.0, 2.0])
@@ -61,6 +72,7 @@ def test_nested_oracle_is_saved_before_scalar_filter(tmp_path, monkeypatch):
     assert rows[1]["step"] == 0 and rows[1]["env_step"] == 1
     assert rows[1]["info"]["perturbation"]["events"][0]["event"] == "injected"
     assert rows[1]["info"]["failureprobe_commands"]["transformed_action"] == (-action).tolist()
+    assert rows[1]["contacts"][0]["geom2"] == 2
     assert "perturbation" not in result["info"]
     assert "failureprobe_commands" not in result["info"]
     assert "failureprobe_oracle_trace" in result["info"]
