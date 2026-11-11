@@ -122,9 +122,12 @@ def test_reset_records_native_source_count_and_hash_separately_from_settled_stat
 
     source = tmp_path / "actual.pruned_init"
     source.write_bytes(b"source file bytes differ from the selected numerical state")
+    bddl = tmp_path / "actual.bddl"
+    bddl.write_bytes(b"(define (problem actual))")
     states = np.arange(12, dtype=np.float64).reshape(3, 4)
     adapter = LiberoEnvironmentAdapter()
     adapter._env = ResetEnvironment()
+    adapter._env.env = SimpleNamespace(bddl_file_name=str(bddl))
     adapter._init_states = states
     adapter._initial_state_source = {
         "path": str(source),
@@ -140,4 +143,5 @@ def test_reset_records_native_source_count_and_hash_separately_from_settled_stat
     assert event["source_initial_state_dtype"] == "<f8"
     assert event["source_initial_state_shape"] == [4]
     assert event["source_initial_state_sha256"] != event["source_initial_state_source"]["sha256"]
+    assert event["bddl"] == {"path": str(bddl), "sha256": hashlib.sha256(bddl.read_bytes()).hexdigest()}
     assert event["sim_state"] == [1.0, 2.0]

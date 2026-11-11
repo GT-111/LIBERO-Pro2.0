@@ -130,6 +130,7 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
         plan = _perturbation_plan(self._env)
         if self._failureprobe_trace is not None:
             source_state = np.ascontiguousarray(self._init_states[init_state_id])
+            bddl_path = Path(self._env.env.bddl_file_name).resolve()
             self._failureprobe_trace.reset(
                 init_state_id,
                 seed,
@@ -140,6 +141,10 @@ class LiberoEnvironmentAdapter(EnvironmentAdapter):
                 source_initial_state_shape=list(source_state.shape),
                 source_initial_state_count=len(self._init_states),
                 source_initial_state_source=self._initial_state_source,
+                bddl={
+                    "path": str(bddl_path),
+                    "sha256": hashlib.sha256(bddl_path.read_bytes()).hexdigest(),
+                },
                 **oracle_state(self._env, raw),
             )
         return {
